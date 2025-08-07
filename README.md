@@ -24,3 +24,7 @@ The dataset uploaded to Hugging Face contains at least two columns:
 - `text` – Markdown text with description and references
 Additional metadata like publication dates, CVSS metrics, and mapped CWE
 weaknesses with their official names are also included.
+
+When the dataset is pushed to the Hub the script now also generates a
+README with the current update date and basic statistics such as the total
+number of records and the covered publication range.

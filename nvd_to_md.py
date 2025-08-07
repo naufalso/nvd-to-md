@@ -16,7 +16,7 @@ import json
 import os
 import textwrap
 import re
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import requests
 from datasets import Dataset, Features, Value
@@ -244,6 +244,42 @@ def build_dataset(records: List[Dict]) -> Dataset:
     return dataset
 
 
+def calculate_statistics(dataset: Dataset) -> Dict[str, Any]:
+    """Calculate basic statistics for the dataset."""
+    published = [p for p in dataset["publishedDate"] if p]
+    modified = [m for m in dataset["lastModifiedDate"] if m]
+    avg_len = (
+        sum(len(t) for t in dataset["text"]) / len(dataset) if len(dataset) else 0
+    )
+    stats = {
+        "records": len(dataset),
+        "earliest_published": min(published) if published else "",
+        "latest_published": max(published) if published else "",
+        "latest_modified": max(modified) if modified else "",
+        "avg_text_length": avg_len,
+        "updated": datetime.date.today().isoformat(),
+    }
+    return stats
+
+
+def build_dataset_card(stats: Dict[str, Any]) -> str:
+    """Create the dataset README content for the Hugging Face Hub."""
+    lines = [
+        "# NVD CVE Markdown",
+        "",
+        "CVE records from the National Vulnerability Database rendered as Markdown.",
+        "",
+        f"- **Total records**: {stats['records']}",
+        f"- **Earliest publication**: {stats['earliest_published']}",
+        f"- **Latest publication**: {stats['latest_published']}",
+        f"- **Latest modification**: {stats['latest_modified']}",
+        f"- **Average text length**: {stats['avg_text_length']:.0f} characters",
+        "",
+        f"_Last updated: {stats['updated']}_",
+    ]
+    return "\n".join(lines)
+
+
 def push_dataset(dataset: Dataset, hf_token: str, repo_id: str) -> None:
     api = HfApi(token=hf_token)
     try:
@@ -252,6 +288,15 @@ def push_dataset(dataset: Dataset, hf_token: str, repo_id: str) -> None:
         print("Repo creation skipped / already exists:", exc)
     print("Pushing dataset to Hub… this can take a while.")
     dataset.push_to_hub(repo_id, token=hf_token, split="train")
+    stats = calculate_statistics(dataset)
+    readme = build_dataset_card(stats)
+    api.upload_file(
+        path_or_fileobj=io.BytesIO(readme.encode("utf-8")),
+        path_in_repo="README.md",
+        repo_id=repo_id,
+        repo_type="dataset",
+    )
+    print("📄 Dataset card updated.")
     print(f"✅ Done! View it at https://huggingface.co/datasets/{repo_id}")
 
 
