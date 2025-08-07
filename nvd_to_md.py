@@ -15,6 +15,7 @@ import io
 import json
 import os
 import textwrap
+import re
 from typing import Dict, List
 
 import requests
@@ -27,6 +28,10 @@ from tqdm.auto import tqdm
 # ---------------------------------------------------------------------------
 NVD_URL_FMT = (
     "https://nvd.nist.gov/feeds/json/cve/1.1/nvdcve-1.1-{year}.json.gz"
+)
+
+CWE_DICT_URL = (
+    "https://raw.githubusercontent.com/OWASP/cwe-sdk-javascript/master/raw/cwe-dictionary.json"
 )
 
 
@@ -76,6 +81,21 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 session = requests.Session()
 session.headers.update({"User-Agent": "NVD-CVE-MD/1.0 (https://huggingface.co)"})
+
+_cwe_names: Dict[str, str] | None = None
+
+
+def get_cwe_names() -> Dict[str, str]:
+    """Return a mapping of CWE ID to official CWE name."""
+    global _cwe_names
+    if _cwe_names is None:
+        resp = session.get(CWE_DICT_URL, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        _cwe_names = {
+            cid: entry.get("attr", {}).get("@_Name") for cid, entry in data.items()
+        }
+    return _cwe_names
 
 def download_feed(year: int) -> Dict:
     """Download and return the JSON feed for a given year."""
@@ -134,7 +154,13 @@ def extract_markdown(item: Dict) -> tuple[str, List[Dict], List[str]]:
     for pdata in item["cve"]["problemtype"]["problemtype_data"]:
         for d in pdata.get("description", []):
             if d.get("lang") == "en" and d.get("value"):
-                weaknesses.append(d["value"])
+                val = d["value"]
+                match = re.match(r"CWE-(\d+)", val)
+                if match:
+                    name = get_cwe_names().get(match.group(1))
+                    if name:
+                        val = f"{val}: {name}"
+                weaknesses.append(val)
 
     # ---------- References ----------
     refs = [r["url"] for r in item["cve"]["references"]["reference_data"] if "url" in r]

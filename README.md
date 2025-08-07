@@ -23,4 +23,4 @@ The dataset uploaded to Hugging Face contains at least two columns:
 - `id` – CVE identifier
 - `text` – Markdown text with description and references
 Additional metadata like publication dates, CVSS metrics, and mapped CWE
-weaknesses are also included.
+weaknesses with their official names are also included.
