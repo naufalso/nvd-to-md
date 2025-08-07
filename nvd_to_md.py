@@ -166,7 +166,13 @@ def extract_markdown(item: Dict) -> tuple[str, List[Dict], List[str]]:
     weaknesses = list(dict.fromkeys(weaknesses))
 
     # ---------- References ----------
-    refs = [r["url"] for r in item["cve"]["references"]["reference_data"] if "url" in r]
+    refs = [
+        r["url"]
+        for r in item["cve"]["references"]["reference_data"]
+        if "url" in r
+    ]
+    # Deduplicate references while preserving order
+    refs = list(dict.fromkeys(refs))
 
     # ---------- Markdown assembly ----------
     md_lines = [
