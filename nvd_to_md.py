@@ -86,8 +86,12 @@ def download_feed(year: int) -> Dict:
         return json.load(gz)
 
 
-def extract_markdown(item: Dict) -> tuple[str, Dict, List[str]]:
-    """Convert one CVE item to Markdown and return CVSS metrics and weaknesses."""
+def extract_markdown(item: Dict) -> tuple[str, List[Dict], List[str]]:
+    """Convert one CVE item to Markdown and return CVSS metrics and weaknesses.
+
+    The returned CVSS metrics are a list of all available versions instead of
+    only the most recent one.
+    """
     meta = item["cve"]["CVE_data_meta"]
     cve_id = meta["ID"]
 
@@ -99,26 +103,31 @@ def extract_markdown(item: Dict) -> tuple[str, Dict, List[str]]:
     published = item.get("publishedDate", "")
     modified = item.get("lastModifiedDate", "")
 
-    # ---------- CVSS metrics (prefer v3.x) ----------
-    cvss: Dict = {}
-    v3 = item.get("impact", {}).get("baseMetricV3", {})
-    v2 = item.get("impact", {}).get("baseMetricV2", {})
+    # ---------- CVSS metrics (gather all available) ----------
+    cvss: List[Dict] = []
+    impact = item.get("impact", {})
+    v3 = impact.get("baseMetricV3", {})
+    v2 = impact.get("baseMetricV2", {})
     if v3:
         c = v3.get("cvssV3", {})
-        cvss = {
-            "version": "3.x",
-            "score": c.get("baseScore"),
-            "severity": c.get("baseSeverity"),
-            "vector": c.get("vectorString"),
-        }
-    elif v2:
+        cvss.append(
+            {
+                "version": c.get("version", "3.x"),
+                "score": c.get("baseScore"),
+                "severity": c.get("baseSeverity"),
+                "vector": c.get("vectorString"),
+            }
+        )
+    if v2:
         c = v2.get("cvssV2", {})
-        cvss = {
-            "version": "2.0",
-            "score": c.get("baseScore"),
-            "severity": v2.get("severity", "UNKNOWN"),
-            "vector": c.get("vectorString"),
-        }
+        cvss.append(
+            {
+                "version": c.get("version", "2.0"),
+                "score": c.get("baseScore"),
+                "severity": v2.get("severity", "UNKNOWN"),
+                "vector": c.get("vectorString"),
+            }
+        )
 
     # ---------- Weaknesses (CWE mapping) ----------
     weaknesses: List[str] = []
@@ -137,17 +146,27 @@ def extract_markdown(item: Dict) -> tuple[str, Dict, List[str]]:
         f"**Published:** {published}  ",
         f"**Last Modified:** {modified}",
     ]
+
+    # Description first
+    md_lines += ["", "## Description", textwrap.fill(desc_en, width=100)]
+
+    # Then CVSS metrics
     if cvss:
-        md_lines += [
-            "",
-            "## CVSS",
-            f"*Version*: {cvss['version']}  ",
-            f"*Base Score*: **{cvss['score']}** ({cvss['severity']})  ",
-            f"*Vector*: `{cvss['vector']}`",
-        ]
+        md_lines += ["", "## CVSS"]
+        for metric in cvss:
+            md_lines += [
+                f"### Version {metric['version']}",
+                f"*Base Score*: **{metric['score']}** ({metric['severity']})  ",
+                f"*Vector*: `{metric['vector']}`",
+                "",
+            ]
+        if md_lines[-1] == "":
+            md_lines.pop()
+
+    # Finally weaknesses
     if weaknesses:
         md_lines += ["", "## Weaknesses"] + [f"- {w}" for w in weaknesses]
-    md_lines += ["", "## Description", textwrap.fill(desc_en, width=100)]
+
     if refs:
         md_lines += ["", "## References"] + [f"- {u}" for u in refs]
 
