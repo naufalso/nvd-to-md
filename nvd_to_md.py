@@ -86,36 +86,72 @@ def download_feed(year: int) -> Dict:
         return json.load(gz)
 
 
-def extract_markdown(item: Dict) -> str:
-    """Convert one CVE item to a Markdown formatted string."""
+def extract_markdown(item: Dict) -> tuple[str, Dict, List[str]]:
+    """Convert one CVE item to Markdown and return CVSS metrics and weaknesses."""
     meta = item["cve"]["CVE_data_meta"]
     cve_id = meta["ID"]
+
+    # ---------- Description / dates ----------
     desc_en = next(
-        (d["value"] for d in item["cve"]["description"]["description_data"]
-         if d["lang"] == "en"),
+        (d["value"] for d in item["cve"]["description"]["description_data"] if d["lang"] == "en"),
         "No description",
     )
     published = item.get("publishedDate", "")
     modified = item.get("lastModifiedDate", "")
-    refs = [
-        r["url"] for r in item["cve"]["references"]["reference_data"] if "url" in r
-    ]
 
+    # ---------- CVSS metrics (prefer v3.x) ----------
+    cvss: Dict = {}
+    v3 = item.get("impact", {}).get("baseMetricV3", {})
+    v2 = item.get("impact", {}).get("baseMetricV2", {})
+    if v3:
+        c = v3.get("cvssV3", {})
+        cvss = {
+            "version": "3.x",
+            "score": c.get("baseScore"),
+            "severity": c.get("baseSeverity"),
+            "vector": c.get("vectorString"),
+        }
+    elif v2:
+        c = v2.get("cvssV2", {})
+        cvss = {
+            "version": "2.0",
+            "score": c.get("baseScore"),
+            "severity": v2.get("severity", "UNKNOWN"),
+            "vector": c.get("vectorString"),
+        }
+
+    # ---------- Weaknesses (CWE mapping) ----------
+    weaknesses: List[str] = []
+    for pdata in item["cve"]["problemtype"]["problemtype_data"]:
+        for d in pdata.get("description", []):
+            if d.get("lang") == "en" and d.get("value"):
+                weaknesses.append(d["value"])
+
+    # ---------- References ----------
+    refs = [r["url"] for r in item["cve"]["references"]["reference_data"] if "url" in r]
+
+    # ---------- Markdown assembly ----------
     md_lines = [
         f"# {cve_id}",
         "",
         f"**Published:** {published}  ",
         f"**Last Modified:** {modified}",
-        "",
-        "## Description",
-        textwrap.fill(desc_en, width=100),
     ]
-
+    if cvss:
+        md_lines += [
+            "",
+            "## CVSS",
+            f"*Version*: {cvss['version']}  ",
+            f"*Base Score*: **{cvss['score']}** ({cvss['severity']})  ",
+            f"*Vector*: `{cvss['vector']}`",
+        ]
+    if weaknesses:
+        md_lines += ["", "## Weaknesses"] + [f"- {w}" for w in weaknesses]
+    md_lines += ["", "## Description", textwrap.fill(desc_en, width=100)]
     if refs:
-        md_lines.extend(["", "## References"])
-        md_lines.extend([f"- {u}" for u in refs])
+        md_lines += ["", "## References"] + [f"- {u}" for u in refs]
 
-    return "\n".join(md_lines)
+    return "\n".join(md_lines), cvss, weaknesses
 
 
 # ---------------------------------------------------------------------------
@@ -128,14 +164,15 @@ def build_records(start_year: int, end_year: int) -> List[Dict]:
         feed = download_feed(year)
         for item in feed.get("CVE_Items", []):
             cve_id = item["cve"]["CVE_data_meta"]["ID"]
-            md = extract_markdown(item)
+            md, cvss, weaknesses = extract_markdown(item)
             records.append(
                 {
                     "id": cve_id,
                     "text": md,
                     "publishedDate": item.get("publishedDate", ""),
                     "lastModifiedDate": item.get("lastModifiedDate", ""),
-                    "cvssMetricV31": item.get("impact", {}).get("baseMetricV3", {}),
+                    "cvss": cvss,
+                    "weaknesses": weaknesses,
                 }
             )
     return records
@@ -148,12 +185,16 @@ def build_dataset(records: List[Dict]) -> Dataset:
             "text": Value("string"),
             "publishedDate": Value("string"),
             "lastModifiedDate": Value("string"),
-            "cvssMetricV31": Value("string"),  # store as JSON string
+            "cvss": Value("string"),  # stored as JSON string
+            "weaknesses": Value("string"),  # stored as JSON string
         }
     )
     dataset = Dataset.from_list(records, features=features)
     dataset = dataset.map(
-        lambda x: {"cvssMetricV31": json.dumps(x["cvssMetricV31"])}
+        lambda x: {
+            "cvss": json.dumps(x["cvss"]),
+            "weaknesses": json.dumps(x["weaknesses"]),
+        }
     )
     return dataset
 
