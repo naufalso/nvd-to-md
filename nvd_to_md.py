@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 
 import requests
 from datasets import Dataset, Features, Value
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, hf_hub_download
 from tqdm.auto import tqdm
 
 # ---------------------------------------------------------------------------
@@ -292,7 +292,26 @@ def push_dataset(dataset: Dataset, hf_token: str, repo_id: str) -> None:
     print("Pushing dataset to Hub… this can take a while.")
     dataset.push_to_hub(repo_id, token=hf_token, split="train")
     stats = calculate_statistics(dataset)
-    readme = build_dataset_card(stats)
+
+    # Preserve existing YAML metadata from the dataset card, if any
+    yaml_header = ""
+    try:
+        existing_path = hf_hub_download(
+            repo_id, "README.md", repo_type="dataset", token=hf_token
+        )
+        with open(existing_path, "r", encoding="utf-8") as fh:
+            existing_readme = fh.read()
+        if existing_readme.startswith("---"):
+            parts = existing_readme.split("---", 2)
+            if len(parts) >= 3:
+                yaml_header = f"---{parts[1]}---\n\n"
+    except Exception:
+        # No existing README or unexpected format – ignore and rebuild from scratch
+        pass
+
+    readme_body = build_dataset_card(stats)
+    readme = f"{yaml_header}{readme_body}" if yaml_header else readme_body
+
     api.upload_file(
         path_or_fileobj=io.BytesIO(readme.encode("utf-8")),
         path_in_repo="README.md",
