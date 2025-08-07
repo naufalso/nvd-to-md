@@ -7,14 +7,17 @@ push the resulting dataset to the [Hugging Face Hub](https://huggingface.co/data
 
 ```bash
 pip install -r requirements.txt
-export HF_TOKEN=your_huggingface_token
-export HF_REPO=yourname/nvd-cve-markdown
-python nvd_to_md.py
+python nvd_to_md.py \
+    --hf-token your_huggingface_token \
+    --repo-id yourname/nvd-cve-markdown
 ```
 
-Optional environment variables:
-- `START_YEAR` – first year to download (default `2002`)
-- `END_YEAR` – last year to download (default current year)
+Optional arguments:
+
+- `--start-year` – first year to download (default `2002`)
+- `--end-year` – last year to download (default current year)
+- `--save-jsonl` – path to write records as JSON Lines before uploading
+- `--no-push` – skip uploading the dataset to the Hugging Face Hub
 
 The dataset uploaded to Hugging Face contains at least two columns:
 - `id` – CVE identifier
