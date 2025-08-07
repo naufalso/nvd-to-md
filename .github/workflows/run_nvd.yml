@@ -1,0 +1,38 @@
+name: Run NVD to Markdown
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run converter
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REPO_ID: ${{ secrets.REPO_ID }}
+          START_YEAR: ${{ vars.START_YEAR }}
+          END_YEAR: ${{ vars.END_YEAR }}
+          SAVE_JSONL: ${{ vars.SAVE_JSONL }}
+        run: |
+          set -e
+          args=(--hf-token "$HF_TOKEN" --repo-id "$REPO_ID")
+          if [ -n "$START_YEAR" ]; then
+            args+=(--start-year "$START_YEAR")
+          fi
+          if [ -n "$END_YEAR" ]; then
+            args+=(--end-year "$END_YEAR")
+          fi
+          if [ -n "$SAVE_JSONL" ]; then
+            args+=(--save-jsonl "$SAVE_JSONL")
+          fi
+          python nvd_to_md.py "${args[@]}"
+
