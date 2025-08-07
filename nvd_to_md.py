@@ -162,6 +162,9 @@ def extract_markdown(item: Dict) -> tuple[str, List[Dict], List[str]]:
                         val = f"{val}: {name}"
                 weaknesses.append(val)
 
+    # Deduplicate weaknesses while preserving order
+    weaknesses = list(dict.fromkeys(weaknesses))
+
     # ---------- References ----------
     refs = [r["url"] for r in item["cve"]["references"]["reference_data"] if "url" in r]
 
@@ -182,8 +185,8 @@ def extract_markdown(item: Dict) -> tuple[str, List[Dict], List[str]]:
         for metric in cvss:
             md_lines += [
                 f"### Version {metric['version']}",
-                f"*Base Score*: **{metric['score']}** ({metric['severity']})  ",
-                f"*Vector*: `{metric['vector']}`",
+                f"*Vector*: `{metric['vector']}`  ",
+                f"*Base Score*: **{metric['score']}** ({metric['severity']})",
                 "",
             ]
         if md_lines[-1] == "":
